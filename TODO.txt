@@ -7,3 +7,5 @@
 [ ] Limit sidebar max game list width
 [ ] Save window size / sidebar width
 [ ] Once config modal is implemented allow holiday theming if the user wants
+[ ] When a game gets deleted it should select the previous item in the index
+[ ] Add name filtering to file browser modal
