@@ -207,9 +207,6 @@ namespace Core
                 // Star Wars Chess
                 {"swt-swchess", "Star Wars Chess"},
 
-                // Tetris
-                {"tetris", "Tetris"},
-
             };
             return idToName;
         }
