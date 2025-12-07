@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Core/GameLauncher.h"
+#include "Core/GameDatabase.h"
 #include "Core/Version.h"
 #include "UI/Theme.h"
 #include "UI/UIManager.h"
@@ -476,69 +477,7 @@ namespace Core
     // Helper to look up readable names
     std::string GameLauncher::ResolveDreammGameName(const std::string &folderID, const std::string &versionID, GamePlatform &outPlatform)
     {
-        static const std::map<std::string, std::string> idToName = {
-            {"lec-alife", "Afterlife"},
-            {"lec-battlehawks", "Battlehawks: 1942"},
-            {"lec-behindmagic", "Star Wars: Behind the Magic"},
-            {"lec-bensgame", "Ben's Game"},
-            {"lec-comi", "Curse of Monkey Island"},
-            {"lec-darkforces", "Star Wars: Dark Forces"},
-            {"lec-dott", "Day of the Tentacle"},
-            {"lec-efmi", "Escape from Monkey Island"},
-            {"lec-ep1insider", "Star Wars: Episode I Insider's Guide"},
-            {"lec-finest", "Their Finest Hour: Battle of Britain"},
-            {"lec-grim", "Grim Fandango"},
-            {"lec-indy3", "Indiana Jones and the Last Crusade"},
-            {"lec-indy3-action", "Indiana Jones and the Last Crusade: The Action Game"},
-            {"lec-indy4", "Indiana Jones and the Fate of Atlantis"},
-            {"lec-indy4-action", "Indiana Jones and the Fate of Atlantis: The Action Game"},
-            {"lec-indydesk", "Indiana Jones and His Desktop Adventures"},
-            {"lec-infernal", "Indiana Jones and the Infernal Machine"},
-            {"lec-jedi", "Star Wars: Jedi Knight"},
-            {"lec-loom", "Loom"},
-            {"lec-makingmagic", "Star Wars: Making Magic"},
-            {"lec-maniac", "Maniac Mansion"},
-            {"lec-masterblazer", "Masterblazer"},
-            {"lec-monkey2", "Monkey Island 2: LeChuck's Revenge"},
-            {"lec-mortimer", "Mortimer and the Riddles of the Medallion"},
-            {"lec-mots", "Star Wars: Jedi Knight: Mysteries of the Sith"},
-            {"lec-nightshift", "Night Shift"},
-            {"lec-outlaws", "Outlaws"},
-            {"lec-passport", "Passport to Adventure"},
-            {"lec-phantom", "Star Wars: Episode I The Phantom Menace"},
-            {"lec-phmpegasus", "PHM Pegasus"},
-            {"lec-pipedream", "Pipe Dream"},
-            {"lec-racer", "Star Wars: Episode I Racer"},
-            {"lec-rebel2", "Star Wars: Rebel Assault II"},
-            {"lec-rebelassault", "Star Wars: Rebel Assault"},
-            {"lec-rebellion", "Star Wars: Rebellion"},
-            {"lec-roguesq", "Star Wars: Rogue Squadron"},
-            {"lec-samnmax", "Sam & Max Hit the Road"},
-            {"lec-shadows", "Star Wars: Shadows of the Empire"},
-            {"lec-somi", "The Secret of Monkey Island"},
-            {"lec-sswproto", "Super Star Wars (Prototype)"},
-            {"lec-strikefleet", "Strike Fleet"},
-            {"lec-swotl", "Secret Weapons of the Luftwaffe"},
-            {"lec-swse", "Star Wars: Screen Entertainment"},
-            {"lec-thedig", "The Dig"},
-            {"lec-throttle", "Full Throttle"},
-            {"lec-tie", "Star Wars: TIE Fighter"},
-            {"lec-xvt", "Star Wars: X-Wing vs. TIE Fighter"},
-            {"lec-xwa", "Star Wars: X-Wing Alliance"},
-            {"lec-xwing", "Star Wars: X-Wing"},
-            {"lec-yoda", "Yoda Stories"},
-            {"lec-zak", "Zak McKracken and the Alien Mindbenders"},
-            {"lll-anakin", "Star Wars: Anakin's Speedway"},
-            {"lll-droidworks", "Star Wars: DroidWorks"},
-            {"lll-elac", "Star Wars: Early Learning Activity Center"},
-            {"lll-gungan", "Star Wars: Episode I The Gungan Frontier"},
-            {"lll-jarjar", "Star Wars: Jar Jar's Journey"},
-            {"lll-pitdroids", "Star Wars: Pit Droids"},
-            {"lll-swmath", "Star Wars Math: Jabba's Game Galaxy"},
-            {"lll-yoda", "Star Wars: Yoda's Challenge Activity Center"},
-            {"mind-indy2", "Indiana Jones and the Temple of Doom"},
-            {"mind-willow", "Willow"},
-            {"swt-swchess", "Star Wars Chess"}};
+        const auto& idToName = Core::GameDatabase::GetDreammMap();
 
         std::string baseName = folderID;
         auto it = idToName.find(folderID);
