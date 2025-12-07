@@ -112,7 +112,6 @@ namespace Core
         bool m_showEditWindow = false;
         bool m_editWindowNeedsFocus = false;
         bool m_triggerEditWindow = false;
-        bool m_scrollToSelection = false;
 
         // Filtering State
         char m_filterName[256] = "";

@@ -192,6 +192,7 @@ namespace Core
                 if (m_games[i].name == selectedName)
                 {
                     m_selectedGameIdx = (int)i;
+                    m_autoScrollFrames = 3;
                     break;
                 }
             }
@@ -328,7 +329,7 @@ namespace Core
                 if (m_games[i].name == lastSelectedName)
                 {
                     m_selectedGameIdx = (int)i;
-                    m_scrollToSelection = true; // Trigger scroll on next render
+                    m_autoScrollFrames = 3;
                     break;
                 }
             }
@@ -468,8 +469,8 @@ namespace Core
         if (window)
             SDL_HideWindow(window);
 
-        // let's make this a toggle (fixes a lot of the mouse scaling issues that dreamm has)
-        #ifdef _WIN32
+// let's make this a toggle (fixes a lot of the mouse scaling issues that dreamm has)
+#ifdef _WIN32
         _putenv("SDL_MOUSE_RELATIVE_MODE_WARP=1");
 #else
         setenv("SDL_MOUSE_RELATIVE_MODE_WARP", "1", 1);
@@ -507,7 +508,7 @@ namespace Core
         if (window)
         {
             SDL_ShowWindow(window);
-            SDL_RaiseWindow(window); 
+            SDL_RaiseWindow(window);
         }
     }
 
@@ -876,9 +877,8 @@ namespace Core
             // Run this check if we have pending scroll frames
             if (m_autoScrollFrames > 0 && m_selectedGameIdx == (int)i)
             {
-                // 1.0f means "Align this item to the bottom of the visible view"
-                // This ensures we scroll DOWN to see it.
-                ImGui::SetScrollHereY(1.0f);
+                ImGui::SetScrollHereY(0.5f);
+                ImGui::SetItemDefaultFocus();
             }
 
             if (!isPlayable)
@@ -895,7 +895,7 @@ namespace Core
         if (ImGui::Button("+ Add Game", ImVec2(-1, 30)))
         {
             // Clear filters so the new item is definitely visible
-            m_filterName[0] = '\0';
+            memset(m_filterName, 0, sizeof(m_filterName));
             m_filterPlatform = 0;
             m_filterStatus = 0;
 
@@ -908,7 +908,7 @@ namespace Core
 
             m_selectedGameIdx = (int)m_games.size() - 1;
 
-            m_autoScrollFrames = 2;
+            m_autoScrollFrames = 3;
 
             m_showEditWindow = true;
         }
@@ -1418,7 +1418,8 @@ namespace Core
 
         ImGui::Columns(2, "MainLayout", true);
         static bool widthSet = false;
-        if (!widthSet) {
+        if (!widthSet)
+        {
             ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() * 0.33f);
             widthSet = true;
         }
