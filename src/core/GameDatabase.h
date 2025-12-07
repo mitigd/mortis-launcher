@@ -211,6 +211,6 @@ namespace Core
             return idToName;
         }
     };
-}
+} // namespace Core
 
 #endif // GAMEDATABASE_H

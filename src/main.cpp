@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "App/Application.h"
 
-// Aurebesh - Dream Launcher
+// Mortis Launcher (Unofficial Dreamm Launcher)
 
 #if defined(_WIN32) && !defined(DEBUG) && !defined(_DEBUG)
     #include <windows.h>

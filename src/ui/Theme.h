@@ -28,6 +28,6 @@ namespace UI {
         static void SetHalloweenTheme();
         static void SetChristmasTheme();
     };
-}
+} // namespace UI
 
 #endif // THEME_H

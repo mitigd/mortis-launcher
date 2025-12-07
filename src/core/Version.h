@@ -9,6 +9,6 @@ namespace Core {
         
         static constexpr const char* STRING = "0.2.3";
     };
-}
+} // namespace Core
 
 #endif // VERSION_H

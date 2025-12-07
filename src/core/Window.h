@@ -32,6 +32,6 @@ namespace Core
         SDL_GLContext m_glContext = nullptr;
     };
 
-}
+} // namespace Core
 
 #endif // WINDOW_H
