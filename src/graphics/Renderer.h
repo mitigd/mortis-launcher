@@ -22,6 +22,10 @@ public:
     void RenderGameObjects(const Game::GameState& gameState, float time);
     void EndFrame();
 
+    void SetClearColor(float r, float g, float b, float a) {
+        m_clearColor[0] = r; m_clearColor[1] = g; m_clearColor[2] = b; m_clearColor[3] = a;
+    }
+
 private:
     // Background Rendering Resources
     GLuint m_backgroundProg = 0;
@@ -38,6 +42,8 @@ private:
     static GLuint CompileShader(GLenum type, const char* src);
     static GLuint LinkProgram(const char* vsSrc, const char* fsSrc);
     static GLuint LinkProgramFromShaders(GLuint vs, GLuint fs);
+
+    float m_clearColor[4] = {0.1f, 0.1f, 0.1f, 1.0f};
 };
 
 } // namespace Graphics

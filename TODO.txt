@@ -2,10 +2,11 @@
 [ ] Cross compatability with other systems
 [ ] Fix the padding issues for the game list and dashboard
 [ ] Add a config option to change Dreamm location within the app
-[ ] Implement an about modal [versioning/author/etc]
-[ ] Ability to enable/disable SDL_MOUSE_RELATIVE_MODE_WARP in config modal
+[+] Implement an about modal [versioning/author/etc]
+[+] Ability to enable/disable SDL_MOUSE_RELATIVE_MODE_WARP in config modal
 [ ] Limit sidebar max game list width
 [ ] Save window size / sidebar width
-[ ] Once config modal is implemented allow holiday theming if the user wants
+[+] Once config modal is implemented allow holiday theming if the user wants
 [ ] When a game gets deleted it should select the previous item in the index
 [ ] Add name filtering to file browser modal
+[+] Ability to turn off expensive effects

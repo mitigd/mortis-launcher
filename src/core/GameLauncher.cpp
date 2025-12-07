@@ -1,5 +1,7 @@
 #include "pch.h"
 #include "Core/GameLauncher.h"
+#include "UI/Theme.h"
+#include "UI/UIManager.h"
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
@@ -12,7 +14,7 @@
 namespace Core
 {
 
-    // --- Utilities ---
+    // <-- Utilities -->
     static std::string Trim(const std::string &str)
     {
         size_t first = str.find_first_not_of(" \t\n\r");
@@ -41,11 +43,11 @@ namespace Core
         return drives;
     }
 
-    // RAM Options
+    // <-- RAM Options -->
     static const int RAM_VALUES[] = {640, 1024, 4096, 8192, 16384, 32768, 65536, 131072, 262144};
     static const char *RAM_LABELS[] = {"640 KB", "1 MB", "4 MB", "8 MB", "16 MB", "32 MB", "64 MB", "128 MB", "256 MB"};
 
-    // MIPS (CPU Speed) Presets
+    // <-- MIPS (CPU Speed) Presets -->
     // 0 for "Unlimited"
     struct MipsPreset
     {
@@ -61,7 +63,7 @@ namespace Core
         {0, "Unlimited (Windows Default)"}};
     static const int MIPS_PRESET_COUNT = sizeof(MIPS_PRESETS) / sizeof(MIPS_PRESETS[0]);
 
-    // Resolution Presets (Windows Desktop Only)
+    // <-- Resolution Presets (Windows Desktop Only) -->
     struct ResolutionPreset
     {
         int w;
@@ -81,7 +83,7 @@ namespace Core
         {1280, 1024, 32, "1280 x 1024 x 32 (SXGA)"},
         {1600, 1200, 32, "1600 x 1200 x 32 (UXGA)"}};
 
-    // --- Lifecycle ---
+    // <-- Lifecycle -->
     GameLauncher::GameLauncher()
     {
         std::error_code ec;
@@ -103,10 +105,11 @@ namespace Core
 
     void GameLauncher::Initialize()
     {
+        LoadConfig();
         LoadDatabase();
     }
 
-    // --- Helper: Background Directory Scanner ---
+    // <-- Helper: Background Directory Scanner -->
     // This runs on a separate thread to prevent UI freezing
     std::vector<Core::GameLauncher::FileBrowserEntry> ScanDirectoryAsync(
         fs::path path,
@@ -164,7 +167,7 @@ namespace Core
         return entries;
     }
 
-    // --- Helper: Sort Library ---
+    // <-- Helper: Sort Library -->
     void GameLauncher::SortLibrary()
     {
         if (m_games.empty())
@@ -199,7 +202,51 @@ namespace Core
         }
     }
 
-    // --- Persistence ---
+    // <-- Persistence -->
+    void GameLauncher::LoadConfig()
+    {
+        std::ifstream file("launcher_config.txt");
+        if (!file.is_open())
+            return;
+        std::string line;
+        // Simple line-by-line: BgEnabled|MouseWarp|ThemeIdx
+        if (std::getline(file, line))
+        {
+            std::stringstream ss(line);
+            std::string segment;
+            std::vector<std::string> seglist;
+            while (std::getline(ss, segment, '|'))
+                seglist.push_back(segment);
+
+            if (seglist.size() >= 3)
+            {
+                m_configEnableBackground = (seglist[0] == "1");
+                m_configMouseWarp = (seglist[1] == "1");
+                try
+                {
+                    m_configTheme = std::stoi(seglist[2]);
+                }
+                catch (...)
+                {
+                    m_configTheme = 0;
+                }
+            }
+        }
+        // Apply theme immediately on load
+        UI::ThemeManager::ApplyTheme((UI::AppTheme)m_configTheme);
+    }
+
+    void GameLauncher::SaveConfig()
+    {
+        std::ofstream file("launcher_config.txt");
+        if (file.is_open())
+        {
+            file << (m_configEnableBackground ? "1" : "0") << "|"
+                 << (m_configMouseWarp ? "1" : "0") << "|"
+                 << m_configTheme << "\n";
+        }
+    }
+
     void GameLauncher::SaveDatabase()
     {
         SortLibrary();
@@ -336,7 +383,7 @@ namespace Core
         }
     }
 
-    // --- Launch Logic ---
+    // <-- Launch Logic -->
     std::string GameLauncher::BuildCommand(const GameEntry &game, bool runSetup)
     {
         if (m_dreammExePath.empty())
@@ -469,12 +516,24 @@ namespace Core
         if (window)
             SDL_HideWindow(window);
 
-// let's make this a toggle (fixes a lot of the mouse scaling issues that dreamm has)
+        // Mouse Warp Env Var
+        if (m_configMouseWarp)
+        {
 #ifdef _WIN32
-        _putenv("SDL_MOUSE_RELATIVE_MODE_WARP=1");
+            _putenv("SDL_MOUSE_RELATIVE_MODE_WARP=1");
 #else
-        setenv("SDL_MOUSE_RELATIVE_MODE_WARP", "1", 1);
+            setenv("SDL_MOUSE_RELATIVE_MODE_WARP", "1", 1);
 #endif
+        }
+        else
+        {
+            // Disable if user turned it off
+#ifdef _WIN32
+            _putenv("SDL_MOUSE_RELATIVE_MODE_WARP=");
+#else
+            unsetenv("SDL_MOUSE_RELATIVE_MODE_WARP");
+#endif
+        }
 
         // Execute and BLOCK until finished
 #ifdef _WIN32
@@ -512,7 +571,7 @@ namespace Core
         }
     }
 
-    // --- Browser Logic ---
+    // <-- Browser Logic -->
     void GameLauncher::OpenFileBrowser(const std::string &title, std::string *targetStringRef, const std::vector<std::string> &allowedExtensions)
     {
         m_showFileBrowser = true;
@@ -593,7 +652,7 @@ namespace Core
 
             const bool uiDisabled = isLoading;
 
-            // --- Drive Selection ---
+            // <-- Drive Selection -->
             if (uiDisabled)
                 ImGui::BeginDisabled();
 
@@ -705,7 +764,7 @@ namespace Core
             }
             else
             {
-                // Parent Directory (..) Item
+                // <-- Parent Directory (..) Item -->
                 if (!isRoot)
                 {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.5f, 1.0f));
@@ -730,7 +789,7 @@ namespace Core
                     ImGui::PopStyleColor();
                 }
 
-                // File Items
+                // <-- File Items -->
                 ImGuiListClipper clipper;
                 clipper.Begin((int)m_browserEntries.size());
 
@@ -813,22 +872,24 @@ namespace Core
         }
     }
 
-    // --- UI Rendering ---
+    // <-- UI Rendering -->
 
     void GameLauncher::RenderGameList()
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.1f, 0.1f, 0.12f, 0.85f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
 
-        ImGui::BeginChild("LeftColumnChild", ImVec2(0, 0), false);
+        ImGui::BeginChild("LeftColumnChild", ImVec2(0, 0), true);
 
         ImGui::TextDisabled("LIBRARY FILTER");
         ImGui::InputTextWithHint("##filter", "Name search...", m_filterName, 256);
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
         ImGui::Combo("Platform", &m_filterPlatform, "All\0DOS\0Windows\0\0");
         ImGui::Combo("Status", &m_filterStatus, "All\0Unplayable\0Playable\0\0");
         ImGui::Separator();
 
-        // Start List
+        // <-- Start List -->
         ImGui::BeginChild("GameListScroll", ImVec2(0, -40), false);
 
         for (size_t i = 0; i < m_games.size(); ++i)
@@ -891,8 +952,13 @@ namespace Core
 
         ImGui::EndChild();
 
-        // --- ADD GAME BUTTON ---
-        if (ImGui::Button("+ Add Game", ImVec2(-1, 30)))
+        float configBtnWidth = 40.0f;
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+        float addGameWidth = ImGui::GetContentRegionAvail().x - configBtnWidth - spacing;
+
+        // Add Game Button
+        if (ImGui::Button("+ Add Game", ImVec2(addGameWidth, 30)))
         {
             // Clear filters so the new item is definitely visible
             memset(m_filterName, 0, sizeof(m_filterName));
@@ -913,16 +979,25 @@ namespace Core
             m_showEditWindow = true;
         }
 
+        ImGui::SameLine();
+
+        if (ImGui::Button(u8"\u2699", ImVec2(configBtnWidth, 30)))
+        {
+            m_triggerConfigModal = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Launcher Configuration");
+
         ImGui::EndChild();
-        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
         ImGui::PopStyleVar();
     }
 
     void GameLauncher::RenderGameDashboard()
     {
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.1f, 0.1f, 0.12f, 0.3f));
-
-        ImGui::BeginChild("RightColumnChild", ImVec2(0, 0), false);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+        ImGui::BeginChild("RightColumnChild", ImVec2(0, 0), true);
 
         if (m_selectedGameIdx < 0 || m_selectedGameIdx >= (int)m_games.size())
         {
@@ -934,7 +1009,7 @@ namespace Core
 
         GameEntry &game = m_games[m_selectedGameIdx];
 
-        // --- Title ---
+        // Title
         bool hasLargeFont = (ImGui::GetIO().Fonts->Fonts.Size > 1);
         if (hasLargeFont)
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
@@ -942,7 +1017,7 @@ namespace Core
         if (hasLargeFont)
             ImGui::PopFont();
 
-        // --- Status ---
+        // Status
         ImGui::SameLine();
         if (game.status == GameStatus::Playable)
             ImGui::TextColored(ImVec4(0, 1, 0, 1), "[PLAYABLE]");
@@ -955,10 +1030,10 @@ namespace Core
         if (!canPlay)
             ImGui::BeginDisabled();
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.60f, 0.25f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
-        // PLAY BUTTON
+        // Play Button
 
         if (ImGui::Button("PLAY", ImVec2(150, 50)))
         {
@@ -972,7 +1047,7 @@ namespace Core
 
         ImGui::SameLine();
 
-        // SETUP BUTTON
+        // Setup Button
 
         if (game.setupPath.empty())
             ImGui::BeginDisabled();
@@ -985,7 +1060,7 @@ namespace Core
 
         ImGui::SameLine();
 
-        // SETTINGS BUTTON
+        // Settings Button
 
         if (ImGui::Button("Settings", ImVec2(100, 50)))
         {
@@ -994,7 +1069,7 @@ namespace Core
 
         ImGui::SameLine();
 
-        // MAKE DREAMM BUTTON
+        // Make Dream Button
 
         if (!canPlay)
             ImGui::BeginDisabled();
@@ -1018,10 +1093,11 @@ namespace Core
         ImGui::TextDisabled("INFO");
         ImGui::Text("Platform: %s", game.platform == GamePlatform::DOS ? "DOS" : "Windows");
         ImGui::Text("Machine: %s", game.machine == MachineType::PC ? "PC" : "Tandy");
-        ImGui::Text("EXE: %s", game.exePath.c_str());
+        ImGui::Text("File: %s", game.exePath.c_str());
 
         ImGui::EndChild();
-        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(); 
+        ImGui::PopStyleVar();
     }
 
     void GameLauncher::RenderEditWindow()
@@ -1029,7 +1105,7 @@ namespace Core
         if (!m_showEditWindow)
             return;
 
-        // If index is invalid, force close the window to prevent crash
+        // If index is invalid, force close the window to prevent crash (hack)
         if (m_selectedGameIdx < 0 || m_selectedGameIdx >= (int)m_games.size())
         {
             m_showEditWindow = false;
@@ -1059,7 +1135,7 @@ namespace Core
                     ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 120.0f);
                     ImGui::TableSetupColumn("Input", ImGuiTableColumnFlags_WidthStretch);
 
-                    // --- Basic Info ---
+                    // Basic Info
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
                     ImGui::Text("Game Title");
@@ -1117,7 +1193,7 @@ namespace Core
                     if (ImGui::Combo("##Status", &status, "Unplayable\0Playable\0\0"))
                         game.status = (GameStatus)status;
 
-                    // --- Paths ---
+                    // Paths
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
                     ImGui::Text("Game EXE");
@@ -1140,7 +1216,7 @@ namespace Core
                     if (ImGui::Button("Browse##SetBtn"))
                         OpenFileBrowser("Setup Executable", &game.setupPath, {".exe", ".bat", ".com"});
 
-                    // --- CD Mount Area ---
+                    // CD Mount Area
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
                     ImGui::Text("CD Image (D:)");
@@ -1159,7 +1235,7 @@ namespace Core
 
                 if (ImGui::BeginTabBar("EditTabs"))
                 {
-                    // --- MACHINE TAB with RAM COMBO ---
+                    // <-- Machine Tab -->
                     if (ImGui::BeginTabItem("Machine"))
                     {
                         ImGui::BeginTable("MachTable", 2, ImGuiTableFlags_SizingStretchProp);
@@ -1171,7 +1247,7 @@ namespace Core
                         ImGui::Text("RAM Size");
                         ImGui::TableSetColumnIndex(1);
 
-                        // Logic to find current index matching kb, or custom
+                        // <-- Logic to find current index matching kb, or custom -->
                         int currentRamIdx = -1;
                         for (int i = 0; i < 9; i++)
                         {
@@ -1193,7 +1269,7 @@ namespace Core
                             ImGui::Text("(Custom: %d KB)", game.ramKB);
                         }
 
-                        // --- MIPS (CPU Speed) ---
+                        // MIPS (CPU Speed)
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text("CPU Speed");
@@ -1242,7 +1318,7 @@ namespace Core
                             ImGui::SetTooltip("0 = Unlimited (Windows)\n60 = Standard DOS");
                         }
 
-                        // --- Machine Type ---
+                        // Machine Type
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text("Type");
@@ -1258,7 +1334,7 @@ namespace Core
                         ImGui::EndTabItem();
                     }
 
-                    // --- VIDEO TAB with RESOLUTION COMBO ---
+                    // <-- Video tab -->
                     if (ImGui::BeginTabItem("Video"))
                     {
                         ImGui::BeginTable("VidTable", 2, ImGuiTableFlags_SizingStretchProp);
@@ -1271,7 +1347,7 @@ namespace Core
                         ImGui::TableSetColumnIndex(1);
                         ImGui::Combo("##VidHW", &game.videoHwIdx, m_videoHwOptions, 6);
 
-                        // --- WINDOWS RESOLUTION LOGIC ---
+                        // Windows Resolution Logic
                         // Only enable these controls if Platform is Windows
                         bool isWindows = (game.platform == GamePlatform::Windows);
 
@@ -1412,6 +1488,132 @@ namespace Core
         }
     }
 
+    void GameLauncher::RenderConfigModal()
+    {
+        if (m_triggerConfigModal)
+        {
+            ImGui::OpenPopup("Launcher Configuration");
+            m_triggerConfigModal = false;
+            m_showConfigModal = true;
+        }
+
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(450, 420));
+
+        // <-- Begin Config Modal -->
+        if (ImGui::BeginPopupModal("Launcher Configuration", &m_showConfigModal, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoDocking))
+        {
+
+            ImGui::TextDisabled("VISUALS");
+            ImGui::Separator();
+
+            // Background Shader Toggle
+            if (ImGui::Checkbox("Enable Animated Background", &m_configEnableBackground))
+            {
+                SaveConfig();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Disabling this saves GPU usage (0%% GPU on Idle).");
+
+            // Theme Selector
+            ImGui::Spacing();
+            ImGui::Text("Interface Theme");
+            const char *themes[] = { 
+                "Auto (Seasonal)", 
+                "Default Dark",    
+                "Valentine (Feb)",  
+                "Shamrock (March)", 
+                "Halloween (Oct)",  
+                "Christmas (Dec)"   
+            };
+
+            if (m_configTheme >= IM_ARRAYSIZE(themes)) m_configTheme = 0;
+
+            if (ImGui::Combo("##ThemeCombo", &m_configTheme, themes, IM_ARRAYSIZE(themes)))
+            {
+                // Apply immediately
+                UI::ThemeManager::ApplyTheme((UI::AppTheme)m_configTheme);
+                SaveConfig();
+            }
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("INPUT / EMULATION");
+            ImGui::Separator();
+
+            // Mouse Warp Toggle
+            if (ImGui::Checkbox("Fix Slow Mouse (Warp Mode)", &m_configMouseWarp))
+            {
+                SaveConfig();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Sets SDL_MOUSE_RELATIVE_MODE_WARP=1.\nFixes sluggish mouse in many DOS/Win9x games.");
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("SYSTEM");
+            ImGui::Separator();
+
+            // About Button
+            if (ImGui::Button("About Mortis Launcher", ImVec2(180, 0)))
+            {
+                m_pendingAboutOpen = true;
+                m_showAboutModal = true;
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            if (ImGui::Button("Close", ImVec2(120, 0)))
+            {
+                SaveConfig();
+                m_showConfigModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+
+            if (m_pendingAboutOpen)
+            {
+                ImGui::OpenPopup("About");
+                m_pendingAboutOpen = false;
+            }
+
+            RenderAboutModal();
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void GameLauncher::RenderAboutModal()
+    {
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+        if (ImGui::BeginPopupModal("About", &m_showAboutModal, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+
+            ImGui::Text("Mortis Launcher v0.2.0");
+            ImGui::Separator();
+            ImGui::Text("A modern front-end for the DREAMM Emulator.");
+            ImGui::Separator();
+            ImGui::Text("Created By: https://www.github.com/mitigd");
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("Built with:");
+            ImGui::BulletText("Dear ImGui");
+            ImGui::BulletText("SDL2");
+            ImGui::BulletText("stb_image");
+
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            if (ImGui::Button("OK", ImVec2(120, 0)))
+            {
+                m_showAboutModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
     void GameLauncher::RenderUI()
     {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
@@ -1427,6 +1629,8 @@ namespace Core
         ImGui::NextColumn();
         RenderGameDashboard();
         ImGui::Columns(1);
+
+        RenderConfigModal();
 
         RenderEditWindow();
 
@@ -1448,6 +1652,12 @@ namespace Core
             if (ImGui::Button("Browse System..."))
             {
                 OpenFileBrowser("Locate DREAMM.exe", &m_dreammExePath, {".exe"});
+            }
+
+            if (ImGui::BeginItemTooltip())
+            {
+                ImGui::Text("DREAMM is the emulator required to run these games.\nPlease locate the executable file.");
+                ImGui::EndTooltip();
             }
 
             if (!m_dreammExePath.empty())

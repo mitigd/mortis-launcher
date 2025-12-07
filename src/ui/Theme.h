@@ -1,21 +1,33 @@
-#pragma once
+#ifndef THEME_H
+#define THEME_H
+
 #include "imgui.h"
 #include <ctime>
 
 namespace UI {
 
-    class ThemeManager {
-    public:
-        static void ApplyTheme();
-
-    private:
-        static void SetHalloweenTheme();
-        static void SetChristmasTheme();
-        // New Ones
-        static void SetValentineTheme();
-        static void SetShamrockTheme();
-        static void SetSpringTheme();
-        static void SetSynthwaveTheme();
+    enum class AppTheme {
+        AutoSeasonal = 0,
+        DefaultDark, 
+        Valentine,
+        Shamrock,
+        Halloween,
+        Christmas
     };
 
+    class ThemeManager {
+    public:
+        static void ApplyTheme(AppTheme themeSelection = AppTheme::AutoSeasonal);
+
+    private:
+        static void SetupCommonStyles(ImGuiStyle& style);
+        
+        static void SetDefaultTheme();
+        static void SetValentineTheme();
+        static void SetShamrockTheme();
+        static void SetHalloweenTheme();
+        static void SetChristmasTheme();
+    };
 }
+
+#endif // THEME_H

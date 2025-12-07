@@ -41,32 +41,41 @@ namespace UI
 
         SDL_Log("UI Scale Factor: %.2f", scale);
 
-        const char *fontPath = "C:\\Windows\\Fonts\\segoeui.ttf";
+        const char *textFontPath = "C:\\Windows\\Fonts\\segoeui.ttf";
+        const char *symbolFontPath = "C:\\Windows\\Fonts\\seguisym.ttf";
 
-        FILE *f = fopen(fontPath, "rb");
-        if (f)
+        if (std::filesystem::exists(textFontPath))
         {
-            fclose(f);
-            io.Fonts->AddFontFromFileTTF(fontPath, 18.0f * scale);
-
-            m_titleFont = io.Fonts->AddFontFromFileTTF(fontPath, 30.0f * scale);
+            io.Fonts->AddFontFromFileTTF(textFontPath, 18.0f * scale);
         }
         else
         {
             ImFontConfig config;
             config.SizePixels = 13.0f * scale;
             io.Fonts->AddFontDefault(&config);
+        }
 
-            if (io.Fonts->Fonts.Size > 0)
-            {
-                m_titleFont = io.Fonts->Fonts[0];
-            }
+        ImFontConfig mergeConfig;
+        mergeConfig.MergeMode = true;
+        mergeConfig.PixelSnapH = true;
+
+        static const ImWchar icons_ranges[] = {0x2699, 0x2699, 0};
+
+        if (std::filesystem::exists(symbolFontPath))
+        {
+            io.Fonts->AddFontFromFileTTF(symbolFontPath, 18.0f * scale, &mergeConfig, icons_ranges);
+        }
+
+        if (std::filesystem::exists(textFontPath))
+        {
+            m_titleFont = io.Fonts->AddFontFromFileTTF(textFontPath, 30.0f * scale);
+        }
+        else if (io.Fonts->Fonts.Size > 0)
+        {
+            m_titleFont = io.Fonts->Fonts[0];
         }
 
         ImGui::StyleColorsDark();
-
-        // make a toggle once config modal is implemented
-        // UI::ThemeManager::ApplyTheme();
 
         ImGuiStyle &style = ImGui::GetStyle();
         style.WindowRounding = 0.0f;

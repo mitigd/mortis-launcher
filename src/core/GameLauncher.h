@@ -70,6 +70,8 @@ namespace Core
         void Initialize();
         void RenderUI();
 
+        bool IsBackgroundEnabled() const { return m_configEnableBackground; }
+
         struct FileBrowserEntry
         {
             std::filesystem::path fullPath;
@@ -82,6 +84,9 @@ namespace Core
         void SaveDatabase();
         void SortLibrary();
 
+        void RenderConfigModal();
+        void RenderAboutModal();
+
         void LaunchGame(const GameEntry &game, bool runSetup);
         void CreateDreammFile(const GameEntry &game);
         std::string BuildCommand(const GameEntry &game, bool runSetup);
@@ -90,12 +95,15 @@ namespace Core
 
         int m_autoScrollFrames = 0; 
 
-        // -- UI Helpers --
+        void LoadConfig();
+        void SaveConfig();
+
+        // UI Helpers 
         void RenderGameList();
         void RenderGameDashboard();
         void RenderEditWindow();
 
-        // -- File Browser --
+        // File Browser 
         void OpenFileBrowser(const std::string &title, std::string *targetStringRef, const std::vector<std::string> &allowedExtensions = {});
         void RenderFileBrowser();
 
@@ -103,7 +111,11 @@ namespace Core
         bool m_pendingOpenChild = false;
         bool m_showChild = false;
 
-        // -- State --
+        bool m_triggerConfigModal = false;
+
+        bool m_pendingAboutOpen = false; 
+
+        // State
         std::string m_dreammExePath;
         std::vector<GameEntry> m_games;
         int m_selectedGameIdx = -1;
@@ -121,6 +133,15 @@ namespace Core
         // File Browser State
         bool m_showFileBrowser = false;
         bool m_pendingBrowserOpen = false;
+
+        // Config State
+        bool m_showConfigModal = false;
+        bool m_showAboutModal = false;
+
+        // Persisted Settings
+        bool m_configEnableBackground = true;
+        bool m_configMouseWarp = true;
+        int m_configTheme = 0;
 
         std::future<std::vector<FileBrowserEntry>> m_loadingFuture;
 

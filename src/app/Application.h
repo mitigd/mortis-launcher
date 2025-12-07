@@ -9,6 +9,7 @@ namespace Game { class GameState; }
 #include "Core/Window.h"
 #include "Graphics/Renderer.h"
 #include "UI/UIManager.h"
+#include "core/GameLauncher.h"
 
 namespace App {
 
@@ -39,6 +40,8 @@ private:
     bool              m_isRunning = false;    
     uint64_t          m_appStartTime = 0;  
     uint64_t          m_lastFrameTime = 0;  
+
+    Core::GameLauncher m_gameLauncher;
 };
 
 } // namespace App
