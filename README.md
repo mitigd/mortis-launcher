@@ -28,6 +28,7 @@ If you are using the latest beta versions of DREAMM, you know it has experimenta
 ### Developer Tools
 * **Make DREAMM File:** There is a specific button to generate a `.dreamm` config file next to your game executable. This is useful if you are helping debug DREAMM or want to share a config.
 
-### What it is **NOT**
+## What it does **NOT**
+
 * **An "end all, be all" Launcher:** This will only be a launcher for DREAMM. 
 * **Feature Creep XL:** There will be a point where I find the features to be complete. I will adjust new releases **only** whenever there are new additions within Dreamm.
