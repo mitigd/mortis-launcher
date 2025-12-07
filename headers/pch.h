@@ -1,6 +1,7 @@
 #define SDL_MAIN_HANDLED
 #include <windows.h>
 #include <iostream>
+#include <sstream>
 #include <cstdio>
 #include <cstdint>
 #include <cmath> 

@@ -183,67 +183,56 @@ namespace Core
     void GameLauncher::ConvertLegacyDatabase()
     {
         const std::string legacyFile = "games_db.txt";
-
-        // Check if legacy file exists
         if (!fs::exists(legacyFile))
             return;
 
-        SDL_Log("Legacy database found. Starting migration...");
-
+        SDL_Log("Legacy DB found. Converting...");
         std::ifstream file(legacyFile);
         if (!file.is_open())
             return;
 
         std::string line;
-        bool firstLineRead = false;
-        int importedCount = 0;
+        int lineCount = 0;
+        int imported = 0;
 
         while (std::getline(file, line))
         {
             line = Trim(line);
-            if (line.empty())
-                continue;
+            lineCount++;
 
-            if (!firstLineRead)
+            // Line 1: Dreamm Path (Legacy)
+            if (lineCount == 1 && m_dreammExePath.empty() && fs::exists(line))
             {
-                // If we don't have a path configured yet, use the one from the old file
-                // But only if the old one actually exists
-                if (m_dreammExePath.empty() && fs::exists(line))
-                {
-                    m_dreammExePath = line;
-                    SaveConfig();
-                    SDL_Log("Imported DREAMM Path: %s", line.c_str());
-                }
-                firstLineRead = true;
+                m_dreammExePath = line;
+                SaveConfig();
                 continue;
             }
+            if (lineCount <= 2 || line.empty())
+                continue;
 
-            // Format: Name|Exe|Setup|Machine|Unused|RAM|AudioMask|VidIdx|W|H|D|MIPS|Iso|
-
-            std::stringstream ss(line);
-            std::string segment;
+            // Manual Split
             std::vector<std::string> parts;
-
-            while (std::getline(ss, segment, '|'))
+            size_t start = 0, end = line.find('|');
+            while (end != std::string::npos)
             {
-                parts.push_back(segment);
+                parts.push_back(line.substr(start, end - start));
+                start = end + 1;
+                end = line.find('|', start);
             }
+            parts.push_back(line.substr(start));
 
-            if (parts.size() < 12)
-                continue; 
+            if (parts.size() < 13)
+                continue;
 
-            // Check for duplicates (by EXE path) before adding
-            std::string exePath = parts[1];
-            bool duplicate = false;
-            for (const auto &existing : m_games)
-            {
-                if (existing.exePath == exePath)
+            // Skip Duplicates
+            bool dup = false;
+            for (auto &g : m_games)
+                if (g.exePath == parts[1])
                 {
-                    duplicate = true;
+                    dup = true;
                     break;
                 }
-            }
-            if (duplicate)
+            if (dup)
                 continue;
 
             GameEntry g;
@@ -251,18 +240,21 @@ namespace Core
             g.exePath = parts[1];
             g.setupPath = parts[2];
 
-            // Machine (0 = PC, 1 = Tandy)
-            int machInt = 0;
+            // Old File Indices: 3=Platform, 4=Status, 5=RAM, 6=Audio, 7=Video
             try
             {
-                machInt = std::stoi(parts[3]);
+                g.platform = (GamePlatform)std::stoi(parts[3]);
             }
             catch (...)
             {
             }
-            g.machine = (machInt == 1) ? MachineType::Tandy : MachineType::PC;
-
-            // RAM
+            try
+            {
+                g.status = (GameStatus)std::stoi(parts[4]);
+            }
+            catch (...)
+            {
+            }
             try
             {
                 g.ramKB = std::stoi(parts[5]);
@@ -272,7 +264,6 @@ namespace Core
                 g.ramKB = 640;
             }
 
-            // Audio Flags (Bitmask conversion)
             int audioMask = 0;
             try
             {
@@ -281,19 +272,13 @@ namespace Core
             catch (...)
             {
             }
-            for (int i = 0; i < 6; i++)
-            {
-                g.audioFlags[i] = (audioMask & (1 << i)) != 0;
-            }
 
-            // Video
             try
             {
                 g.videoHwIdx = std::stoi(parts[7]);
             }
             catch (...)
             {
-                g.videoHwIdx = 5;
             }
             try
             {
@@ -301,7 +286,6 @@ namespace Core
             }
             catch (...)
             {
-                g.width = 640;
             }
             try
             {
@@ -309,7 +293,6 @@ namespace Core
             }
             catch (...)
             {
-                g.height = 480;
             }
             try
             {
@@ -317,57 +300,65 @@ namespace Core
             }
             catch (...)
             {
-                g.depth = 8;
             }
-
-            // MIPS
             try
             {
                 g.mips = std::stoi(parts[11]);
             }
             catch (...)
             {
-                g.mips = 0;
             }
-
-            if (parts.size() > 12)
-            {
-                if (parts[12] != "0" && parts[12].length() > 2)
-                {
-                    g.isoPath = parts[12];
-                }
-            }
-
-            // --- HEURISTICS ---
-            bool isWin = (g.ramKB > 16384) || (g.depth > 8);
-            if (g.name.find("(win)") != std::string::npos || g.name.find("Windows") != std::string::npos)
-                isWin = true;
-
-            g.platform = isWin ? GamePlatform::Windows : GamePlatform::DOS;
-            g.status = GameStatus::Playable;
-
-            m_games.push_back(g);
-            importedCount++;
-        }
-
-        file.close();
-
-        if (importedCount > 0 || firstLineRead)
-        {
-            SortLibrary();
-            SaveDatabase();
-            SDL_Log("Migration complete. Imported %d games.", importedCount);
-
-            // Delete the legacy file so we don't do this again
             try
             {
-                fs::remove(legacyFile);
-                SDL_Log("Legacy file '%s' deleted.", legacyFile.c_str());
+                g.machine = (MachineType)std::stoi(parts[12]);
             }
             catch (...)
             {
-                SDL_Log("Warning: Could not delete legacy file.");
             }
+            if (parts.size() > 13)
+                g.description = parts[13];
+
+            // Detect Windows strictly
+            if (g.name.find("(win)") != std::string::npos ||
+                g.name.find("Windows") != std::string::npos)
+            {
+                g.platform = GamePlatform::Windows;
+            }
+
+            // Set Audio Flags
+            for (int i = 0; i < 6; i++)
+                g.audioFlags[i] = (audioMask & (1 << i));
+
+            // Force GMIDI for Windows
+            if (g.platform == GamePlatform::Windows)
+            {
+                g.audioFlags[5] = true; // GMIDI
+                if (g.ramKB < 16384)
+                    g.ramKB = 16384;
+            }
+            else if (audioMask == 0)
+            {
+                // DOS Default
+                g.audioFlags[3] = true; // SB16
+            }
+
+            m_games.push_back(g);
+            imported++;
+        }
+        file.close();
+
+        if (imported > 0)
+        {
+            SortLibrary();
+            SaveDatabase(); 
+            try
+            {
+                fs::remove(legacyFile);
+            }
+            catch (...)
+            {
+            }
+            SDL_Log("Converted %d games and deleted legacy file.", imported);
         }
     }
 
@@ -398,7 +389,7 @@ namespace Core
                         continue;
 
                     std::string fullPath = versionDir.path().string();
-                    std::string folderID = gameDir.path().filename().string();  
+                    std::string folderID = gameDir.path().filename().string();
                     std::string versionID = versionDir.path().filename().string();
 
                     // We check if any existing game has the same install path
@@ -743,17 +734,31 @@ namespace Core
 
         for (const auto &game : m_games)
         {
+            int audioMask = 0;
+            for (int i = 0; i < 6; i++)
+            {
+                if (game.audioFlags[i])
+                    audioMask |= (1 << i);
+            }
+
             file << game.name << "|"
                  << (int)game.platform << "|"
                  << (int)game.status << "|"
                  << game.exePath << "|"
                  << game.setupPath << "|"
-                 << game.installPath << "|"                  
-                 << (game.forceWindowed ? "1" : "0") << "|"  
-                 << (game.forceMaximized ? "1" : "0") << "|" 
-                 << (game.forceFullscreen ? "1" : "0") << "|" 
+                 << game.installPath << "|"
+                 << (game.forceWindowed ? "1" : "0") << "|"
+                 << (game.forceMaximized ? "1" : "0") << "|"
+                 << (game.forceFullscreen ? "1" : "0") << "|"
                  << (int)game.machine << "|"
                  << game.ramKB << "|"
+                 << audioMask << "|"
+                 << game.videoHwIdx << "|"
+                 << game.width << "|"
+                 << game.height << "|"
+                 << game.depth << "|"
+                 << game.mips << "|"
+                 << game.isoPath << "|"
                  << game.description << "\n";
         }
         file.close();
@@ -772,17 +777,20 @@ namespace Core
             if (line.empty())
                 continue;
 
-            std::stringstream ss(line);
-            std::string segment;
             std::vector<std::string> parts;
-            while (std::getline(ss, segment, '|'))
-                parts.push_back(segment);
+            size_t start = 0, end = line.find('|');
+            while (end != std::string::npos)
+            {
+                parts.push_back(line.substr(start, end - start));
+                start = end + 1;
+                end = line.find('|', start);
+            }
+            parts.push_back(line.substr(start));
 
             if (parts.empty())
                 continue;
 
             GameEntry g;
-
             if (parts.size() > 0)
                 g.name = parts[0];
             if (parts.size() > 1)
@@ -792,7 +800,6 @@ namespace Core
                 }
                 catch (...)
                 {
-                    g.platform = GamePlatform::DOS;
                 }
             if (parts.size() > 2)
                 try
@@ -801,23 +808,19 @@ namespace Core
                 }
                 catch (...)
                 {
-                    g.status = GameStatus::Playable;
                 }
             if (parts.size() > 3)
                 g.exePath = parts[3];
             if (parts.size() > 4)
                 g.setupPath = parts[4];
-
             if (parts.size() > 5)
                 g.installPath = parts[5];
-
             if (parts.size() > 6)
                 g.forceWindowed = (parts[6] == "1");
             if (parts.size() > 7)
                 g.forceMaximized = (parts[7] == "1");
             if (parts.size() > 8)
                 g.forceFullscreen = (parts[8] == "1");
-
             if (parts.size() > 9)
                 try
                 {
@@ -835,12 +838,67 @@ namespace Core
                 {
                 }
             if (parts.size() > 11)
-                g.description = parts[11];
+            {
+                int audioMask = 0;
+                try
+                {
+                    audioMask = std::stoi(parts[11]);
+                }
+                catch (...)
+                {
+                }
+                for (int i = 0; i < 6; i++)
+                    g.audioFlags[i] = (audioMask & (1 << i)) != 0;
+            }
+            if (parts.size() > 12)
+                try
+                {
+                    g.videoHwIdx = std::stoi(parts[12]);
+                }
+                catch (...)
+                {
+                }
+            if (parts.size() > 13)
+                try
+                {
+                    g.width = std::stoi(parts[13]);
+                }
+                catch (...)
+                {
+                }
+            if (parts.size() > 14)
+                try
+                {
+                    g.height = std::stoi(parts[14]);
+                }
+                catch (...)
+                {
+                }
+            if (parts.size() > 15)
+                try
+                {
+                    g.depth = std::stoi(parts[15]);
+                }
+                catch (...)
+                {
+                }
+            if (parts.size() > 16)
+                try
+                {
+                    g.mips = std::stoi(parts[16]);
+                }
+                catch (...)
+                {
+                }
+            if (parts.size() > 17)
+                g.isoPath = parts[17];
+
+            if (parts.size() > 18)
+                g.description = parts[18];
 
             m_games.push_back(g);
         }
         file.close();
-
         SortLibrary();
     }
 
@@ -1033,7 +1091,7 @@ namespace Core
 
         SHELLEXECUTEINFOA shExInfo = {0};
         shExInfo.cbSize = sizeof(shExInfo);
-        shExInfo.fMask = SEE_MASK_NOCLOSEPROCESS; 
+        shExInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
         shExInfo.hwnd = NULL;
         shExInfo.lpVerb = "open";
         shExInfo.lpFile = m_dreammExePath.c_str();
