@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cmath> 
+#include <algorithm>
 
 #include <SDL.h>
 #include <SDL_syswm.h> 

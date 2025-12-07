@@ -34,6 +34,8 @@ private:
     static void PostQuit();
 
     int m_titleBarSpacing = 0; 
+
+    ImFont* m_titleFont = nullptr;
 };
 
 } // namespace UI

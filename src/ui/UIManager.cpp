@@ -31,27 +31,45 @@ namespace UI
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+
+        float scale = (float)h / 600.0f;
+        if (scale < 1.0f)
+            scale = 1.0f;
+
+        SDL_Log("UI Scale Factor: %.2f", scale);
+
         const char *fontPath = "C:\\Windows\\Fonts\\segoeui.ttf";
 
         FILE *f = fopen(fontPath, "rb");
         if (f)
         {
             fclose(f);
-            io.Fonts->AddFontFromFileTTF(fontPath, 18.0f);
+            io.Fonts->AddFontFromFileTTF(fontPath, 18.0f * scale);
 
-            io.Fonts->AddFontFromFileTTF(fontPath, 30.0f);
+            m_titleFont = io.Fonts->AddFontFromFileTTF(fontPath, 30.0f * scale);
         }
         else
         {
-            io.Fonts->AddFontDefault();
+            ImFontConfig config;
+            config.SizePixels = 13.0f * scale;
+            io.Fonts->AddFontDefault(&config);
+
+            if (io.Fonts->Fonts.Size > 0)
+            {
+                m_titleFont = io.Fonts->Fonts[0];
+            }
         }
 
         ImGui::StyleColorsDark();
 
         ImGuiStyle &style = ImGui::GetStyle();
-        style.WindowRounding = 5.0f;
+        style.WindowRounding = 0.0f;
         style.FrameRounding = 4.0f;
         style.PopupRounding = 4.0f;
+
+        style.ScaleAllSizes(scale);
 
         style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.35f);
 
@@ -161,9 +179,9 @@ namespace UI
 
         ImGui::PopStyleVar();
 
-        ImGui::End();           
+        ImGui::End();
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar(2); 
+        ImGui::PopStyleVar(2);
     }
 
     void UIManager::RenderContentWindow()

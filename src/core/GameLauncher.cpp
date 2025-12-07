@@ -2,6 +2,7 @@
 #include "Core/GameLauncher.h"
 #include <iostream>
 #include <sstream>
+#include <cstdlib>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -467,6 +468,13 @@ namespace Core
         if (window)
             SDL_HideWindow(window);
 
+        // let's make this a toggle (fixes a lot of the mouse scaling issues that dreamm has)
+        #ifdef _WIN32
+        _putenv("SDL_MOUSE_RELATIVE_MODE_WARP=1");
+#else
+        setenv("SDL_MOUSE_RELATIVE_MODE_WARP", "1", 1);
+#endif
+
         // Execute and BLOCK until finished
 #ifdef _WIN32
         std::string params = "";
@@ -554,7 +562,9 @@ namespace Core
 
         ImVec2 center = ImGui::GetMainViewport()->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-        ImGui::SetNextWindowSize(ImVec2(600, 450));
+
+        ImVec2 screenSize = ImGui::GetMainViewport()->Size;
+        ImGui::SetNextWindowSize(ImVec2(screenSize.x * 0.7f, screenSize.y * 0.9f));
 
         if (ImGui::BeginPopupModal("File Browser", NULL, ImGuiWindowFlags_NoResize))
         {
@@ -806,6 +816,7 @@ namespace Core
 
     void GameLauncher::RenderGameList()
     {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.1f, 0.1f, 0.12f, 0.85f));
 
         ImGui::BeginChild("LeftColumnChild", ImVec2(0, 0), false);
@@ -904,6 +915,7 @@ namespace Core
 
         ImGui::EndChild();
         ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
     }
 
     void GameLauncher::RenderGameDashboard()
@@ -988,7 +1000,7 @@ namespace Core
             ImGui::BeginDisabled();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.6f, 0.8f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.7f, 0.9f, 1.0f));
-        if (ImGui::Button("Make\nDREAMM", ImVec2(80, 50)))
+        if (ImGui::Button("Make\nDREAMM", ImVec2(100, 50)))
         {
             CreateDreammFile(game);
         }
@@ -1405,7 +1417,11 @@ namespace Core
         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
 
         ImGui::Columns(2, "MainLayout", true);
-        ImGui::SetColumnWidth(0, 300);
+        static bool widthSet = false;
+        if (!widthSet) {
+            ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() * 0.33f);
+            widthSet = true;
+        }
         RenderGameList();
         ImGui::NextColumn();
         RenderGameDashboard();
