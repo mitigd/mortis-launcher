@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cmath> 
 #include <algorithm>
+#include <shlobj.h>
+#include <map>
 
 #include <SDL.h>
 #include <SDL_syswm.h> 

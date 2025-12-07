@@ -1,5 +1,5 @@
 [+] Make the game list scroll to newly added game (0.2.0)
-[ ] Cross compatability with other systems
+[ ] Cross compatibility with other systems
 [+] Fix the padding issues for the game list and dashboard (0.2.3)
 [ ] Add a config option to change Dreamm location within the app
 [+] Implement an about modal [versioning/author/etc] (0.2.3)
@@ -10,3 +10,4 @@
 [ ] When a game gets deleted it should select the previous item in the index
 [ ] Add name filtering to file browser modal
 [+] Ability to turn off expensive effects (0.2.3)
+[+] Detect DREAMM installed games automatically and ADD them to the game list (0.2.5)

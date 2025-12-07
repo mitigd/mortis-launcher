@@ -97,6 +97,10 @@ namespace Core
         m_showFileBrowser = false;
         m_pendingBrowserOpen = false;
         m_selectedGameIdx = -1;
+
+        m_triggerNewGamesModal = false;
+        m_showNewGamesModal = false;
+        m_newGamesCount = 0;
     }
 
     GameLauncher::~GameLauncher()
@@ -108,15 +112,23 @@ namespace Core
     {
         LoadConfig();
         LoadDatabase();
+
+        ConvertLegacyDatabase();
+
+        if (!m_dreammExePath.empty())
+        {
+            ScanDreammGames();
+        }
+        SaveDatabase();
     }
 
     // <-- Helper: Background Directory Scanner -->
     // This runs on a separate thread to prevent UI freezing
-    std::vector<Core::GameLauncher::FileBrowserEntry> ScanDirectoryAsync(
+    std::vector<Core::FileBrowserEntry> ScanDirectoryAsync(
         fs::path path,
         std::vector<std::string> extensions)
     {
-        std::vector<Core::GameLauncher::FileBrowserEntry> entries;
+        std::vector<Core::FileBrowserEntry> entries;
         try
         {
             for (const auto &entry : fs::directory_iterator(path, fs::directory_options::skip_permission_denied))
@@ -142,7 +154,7 @@ namespace Core
                         continue;
                 }
 
-                Core::GameLauncher::FileBrowserEntry e;
+                Core::FileBrowserEntry e;
                 e.fullPath = entry.path();
                 e.name = entry.path().filename().string();
                 e.isDirectory = isDir;
@@ -151,7 +163,7 @@ namespace Core
 
             // Sort Logic
             std::sort(entries.begin(), entries.end(),
-                      [](const Core::GameLauncher::FileBrowserEntry &a, const Core::GameLauncher::FileBrowserEntry &b)
+                      [](const Core::FileBrowserEntry &a, const Core::FileBrowserEntry &b)
                       {
                           if (a.isDirectory != b.isDirectory)
                               return a.isDirectory;
@@ -166,6 +178,446 @@ namespace Core
         {
         }
         return entries;
+    }
+
+    void GameLauncher::ConvertLegacyDatabase()
+    {
+        const std::string legacyFile = "games_db.txt";
+
+        // Check if legacy file exists
+        if (!fs::exists(legacyFile))
+            return;
+
+        SDL_Log("Legacy database found. Starting migration...");
+
+        std::ifstream file(legacyFile);
+        if (!file.is_open())
+            return;
+
+        std::string line;
+        bool firstLineRead = false;
+        int importedCount = 0;
+
+        while (std::getline(file, line))
+        {
+            line = Trim(line);
+            if (line.empty())
+                continue;
+
+            if (!firstLineRead)
+            {
+                // If we don't have a path configured yet, use the one from the old file
+                // But only if the old one actually exists
+                if (m_dreammExePath.empty() && fs::exists(line))
+                {
+                    m_dreammExePath = line;
+                    SaveConfig();
+                    SDL_Log("Imported DREAMM Path: %s", line.c_str());
+                }
+                firstLineRead = true;
+                continue;
+            }
+
+            // Format: Name|Exe|Setup|Machine|Unused|RAM|AudioMask|VidIdx|W|H|D|MIPS|Iso|
+
+            std::stringstream ss(line);
+            std::string segment;
+            std::vector<std::string> parts;
+
+            while (std::getline(ss, segment, '|'))
+            {
+                parts.push_back(segment);
+            }
+
+            if (parts.size() < 12)
+                continue; 
+
+            // Check for duplicates (by EXE path) before adding
+            std::string exePath = parts[1];
+            bool duplicate = false;
+            for (const auto &existing : m_games)
+            {
+                if (existing.exePath == exePath)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate)
+                continue;
+
+            GameEntry g;
+            g.name = parts[0];
+            g.exePath = parts[1];
+            g.setupPath = parts[2];
+
+            // Machine (0 = PC, 1 = Tandy)
+            int machInt = 0;
+            try
+            {
+                machInt = std::stoi(parts[3]);
+            }
+            catch (...)
+            {
+            }
+            g.machine = (machInt == 1) ? MachineType::Tandy : MachineType::PC;
+
+            // RAM
+            try
+            {
+                g.ramKB = std::stoi(parts[5]);
+            }
+            catch (...)
+            {
+                g.ramKB = 640;
+            }
+
+            // Audio Flags (Bitmask conversion)
+            int audioMask = 0;
+            try
+            {
+                audioMask = std::stoi(parts[6]);
+            }
+            catch (...)
+            {
+            }
+            for (int i = 0; i < 6; i++)
+            {
+                g.audioFlags[i] = (audioMask & (1 << i)) != 0;
+            }
+
+            // Video
+            try
+            {
+                g.videoHwIdx = std::stoi(parts[7]);
+            }
+            catch (...)
+            {
+                g.videoHwIdx = 5;
+            }
+            try
+            {
+                g.width = std::stoi(parts[8]);
+            }
+            catch (...)
+            {
+                g.width = 640;
+            }
+            try
+            {
+                g.height = std::stoi(parts[9]);
+            }
+            catch (...)
+            {
+                g.height = 480;
+            }
+            try
+            {
+                g.depth = std::stoi(parts[10]);
+            }
+            catch (...)
+            {
+                g.depth = 8;
+            }
+
+            // MIPS
+            try
+            {
+                g.mips = std::stoi(parts[11]);
+            }
+            catch (...)
+            {
+                g.mips = 0;
+            }
+
+            if (parts.size() > 12)
+            {
+                if (parts[12] != "0" && parts[12].length() > 2)
+                {
+                    g.isoPath = parts[12];
+                }
+            }
+
+            // --- HEURISTICS ---
+            bool isWin = (g.ramKB > 16384) || (g.depth > 8);
+            if (g.name.find("(win)") != std::string::npos || g.name.find("Windows") != std::string::npos)
+                isWin = true;
+
+            g.platform = isWin ? GamePlatform::Windows : GamePlatform::DOS;
+            g.status = GameStatus::Playable;
+
+            m_games.push_back(g);
+            importedCount++;
+        }
+
+        file.close();
+
+        if (importedCount > 0 || firstLineRead)
+        {
+            SortLibrary();
+            SaveDatabase();
+            SDL_Log("Migration complete. Imported %d games.", importedCount);
+
+            // Delete the legacy file so we don't do this again
+            try
+            {
+                fs::remove(legacyFile);
+                SDL_Log("Legacy file '%s' deleted.", legacyFile.c_str());
+            }
+            catch (...)
+            {
+                SDL_Log("Warning: Could not delete legacy file.");
+            }
+        }
+    }
+
+    void GameLauncher::ScanDreammGames()
+    {
+        char path[MAX_PATH];
+        if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, path)))
+        {
+            fs::path dreammRoot = fs::path(path) / "Aaron Giles" / "DREAMM" / "install";
+
+            if (!fs::exists(dreammRoot))
+                return;
+
+            int addedCount = 0;
+
+            for (const auto &gameDir : fs::directory_iterator(dreammRoot))
+            {
+                if (!gameDir.is_directory())
+                    continue;
+
+                std::string folderID = gameDir.path().filename().string();
+                if (folderID.empty() || folderID[0] == '~')
+                    continue;
+
+                for (const auto &versionDir : fs::directory_iterator(gameDir.path()))
+                {
+                    if (!versionDir.is_directory())
+                        continue;
+
+                    std::string fullPath = versionDir.path().string();
+                    std::string folderID = gameDir.path().filename().string();  
+                    std::string versionID = versionDir.path().filename().string();
+
+                    // We check if any existing game has the same install path
+                    bool exists = false;
+                    for (const auto &g : m_games)
+                    {
+                        if (g.installPath == fullPath)
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    // If it exists, SKIP IT. Do not add it again.
+                    if (exists)
+                        continue;
+
+                    GameEntry newGame;
+                    newGame.installPath = fullPath;
+                    newGame.platform = GamePlatform::DreammNative;
+
+                    // Use the Resolver to get a nice name
+                    newGame.name = ResolveDreammGameName(folderID, versionID, newGame.platform);
+
+                    // Defaults
+                    newGame.status = GameStatus::Playable;
+                    newGame.description = "Auto-detected DREAMM installation.";
+
+                    m_games.push_back(newGame);
+                    addedCount++;
+                }
+            }
+
+            if (addedCount > 0)
+            {
+                // Sort the list so the new games appear in alphabetical order
+                SortLibrary();
+
+                // Trigger the modal
+                m_newGamesCount = addedCount;
+                m_triggerNewGamesModal = true;
+                SDL_Log("Scanned and added %d new DREAMM games.", addedCount);
+            }
+        }
+    }
+
+    void GameLauncher::RenderNewGamesModal()
+    {
+        // fails to work at the moment -- TODO
+
+        if (m_triggerNewGamesModal)
+        {
+            m_showNewGamesModal = true;
+            m_triggerNewGamesModal = false;
+        }
+
+        if (m_showNewGamesModal && !ImGui::IsPopupOpen("New Games Found"))
+        {
+            ImGui::OpenPopup("New Games Found");
+        }
+
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+        if (ImGui::BeginPopupModal("New Games Found", &m_showNewGamesModal, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Scan Complete!");
+            ImGui::Separator();
+            ImGui::Text("Mortis Launcher detected %d new DREAMM games.", m_newGamesCount);
+            ImGui::Text("They have been added to your library automatically.");
+
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            if (ImGui::Button("Excellent", ImVec2(120, 0)))
+            {
+                m_showNewGamesModal = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    // Helper to look up readable names
+    std::string GameLauncher::ResolveDreammGameName(const std::string &folderID, const std::string &versionID, GamePlatform &outPlatform)
+    {
+        static const std::map<std::string, std::string> idToName = {
+            {"lec-alife", "Afterlife"},
+            {"lec-battlehawks", "Battlehawks: 1942"},
+            {"lec-behindmagic", "Star Wars: Behind the Magic"},
+            {"lec-bensgame", "Ben's Game"},
+            {"lec-comi", "Curse of Monkey Island"},
+            {"lec-darkforces", "Star Wars: Dark Forces"},
+            {"lec-dott", "Day of the Tentacle"},
+            {"lec-efmi", "Escape from Monkey Island"},
+            {"lec-ep1insider", "Star Wars: Episode I Insider's Guide"},
+            {"lec-finest", "Their Finest Hour: Battle of Britain"},
+            {"lec-grim", "Grim Fandango"},
+            {"lec-indy3", "Indiana Jones and the Last Crusade"},
+            {"lec-indy3-action", "Indiana Jones and the Last Crusade: The Action Game"},
+            {"lec-indy4", "Indiana Jones and the Fate of Atlantis"},
+            {"lec-indy4-action", "Indiana Jones and the Fate of Atlantis: The Action Game"},
+            {"lec-indydesk", "Indiana Jones and His Desktop Adventures"},
+            {"lec-infernal", "Indiana Jones and the Infernal Machine"},
+            {"lec-jedi", "Star Wars: Jedi Knight"},
+            {"lec-loom", "Loom"},
+            {"lec-makingmagic", "Star Wars: Making Magic"},
+            {"lec-maniac", "Maniac Mansion"},
+            {"lec-masterblazer", "Masterblazer"},
+            {"lec-monkey2", "Monkey Island 2: LeChuck's Revenge"},
+            {"lec-mortimer", "Mortimer and the Riddles of the Medallion"},
+            {"lec-mots", "Star Wars: Jedi Knight: Mysteries of the Sith"},
+            {"lec-nightshift", "Night Shift"},
+            {"lec-outlaws", "Outlaws"},
+            {"lec-passport", "Passport to Adventure"},
+            {"lec-phantom", "Star Wars: Episode I The Phantom Menace"},
+            {"lec-phmpegasus", "PHM Pegasus"},
+            {"lec-pipedream", "Pipe Dream"},
+            {"lec-racer", "Star Wars: Episode I Racer"},
+            {"lec-rebel2", "Star Wars: Rebel Assault II"},
+            {"lec-rebelassault", "Star Wars: Rebel Assault"},
+            {"lec-rebellion", "Star Wars: Rebellion"},
+            {"lec-roguesq", "Star Wars: Rogue Squadron"},
+            {"lec-samnmax", "Sam & Max Hit the Road"},
+            {"lec-shadows", "Star Wars: Shadows of the Empire"},
+            {"lec-somi", "The Secret of Monkey Island"},
+            {"lec-sswproto", "Super Star Wars (Prototype)"},
+            {"lec-strikefleet", "Strike Fleet"},
+            {"lec-swotl", "Secret Weapons of the Luftwaffe"},
+            {"lec-swse", "Star Wars: Screen Entertainment"},
+            {"lec-thedig", "The Dig"},
+            {"lec-throttle", "Full Throttle"},
+            {"lec-tie", "Star Wars: TIE Fighter"},
+            {"lec-xvt", "Star Wars: X-Wing vs. TIE Fighter"},
+            {"lec-xwa", "Star Wars: X-Wing Alliance"},
+            {"lec-xwing", "Star Wars: X-Wing"},
+            {"lec-yoda", "Yoda Stories"},
+            {"lec-zak", "Zak McKracken and the Alien Mindbenders"},
+            {"lll-anakin", "Star Wars: Anakin's Speedway"},
+            {"lll-droidworks", "Star Wars: DroidWorks"},
+            {"lll-elac", "Star Wars: Early Learning Activity Center"},
+            {"lll-gungan", "Star Wars: Episode I The Gungan Frontier"},
+            {"lll-jarjar", "Star Wars: Jar Jar's Journey"},
+            {"lll-pitdroids", "Star Wars: Pit Droids"},
+            {"lll-swmath", "Star Wars Math: Jabba's Game Galaxy"},
+            {"lll-yoda", "Star Wars: Yoda's Challenge Activity Center"},
+            {"mind-indy2", "Indiana Jones and the Temple of Doom"},
+            {"mind-willow", "Willow"},
+            {"swt-swchess", "Star Wars Chess"}};
+
+        std::string baseName = folderID;
+        auto it = idToName.find(folderID);
+        if (it != idToName.end())
+            baseName = it->second;
+
+        std::string extraInfo = "";
+        std::string langSuffix = "";
+
+        // Default to DOS unless detected otherwise
+        outPlatform = GamePlatform::DOS;
+
+        // Normalize versionID for easier searching (make lowercase)
+        std::string vID = versionID;
+        std::transform(vID.begin(), vID.end(), vID.begin(), ::tolower);
+
+        // <-- Detect Platform -->
+
+        if (vID.find("win") != std::string::npos)
+        {
+            outPlatform = GamePlatform::Windows;
+            extraInfo += " (Windows)";
+        }
+        else if (vID.find("fmtowns") != std::string::npos || vID.find("fm-towns") != std::string::npos)
+        {
+            outPlatform = GamePlatform::DreammNative;
+            extraInfo += " (FM Towns)";
+        }
+        else if (vID.find("mac") != std::string::npos)
+        {
+            outPlatform = GamePlatform::DreammNative;
+            extraInfo += " (Mac)";
+        }
+        else if (vID.find("dos") != std::string::npos)
+        {
+            outPlatform = GamePlatform::DOS;
+            extraInfo += " (DOS)";
+        }
+
+        // <-- Detect Demo -->
+        if (vID.find("demo") != std::string::npos)
+        {
+            extraInfo += " (Demo)";
+        }
+
+        // <-- Detect Language -->
+        // Using a simple list to iterate cleaner
+        static const std::vector<std::pair<std::string, std::string>> languages = {
+            {"-de", " - DE"},
+            {"-fr", " - FR"},
+            {"-es", " - ES"},
+            {"-it", " - IT"},
+            {"-jp", " - JP"},
+            {"-pt", " - PT"},
+            {"-br", " - BR"},
+            {"-kr", " - KR"},
+            {"-zh", " - ZH"},
+            {"-tw", " - TW"}};
+
+        for (const auto &lang : languages)
+        {
+            if (vID.find(lang.first) != std::string::npos)
+            {
+                langSuffix = lang.second;
+                break; // Stop after first match
+            }
+        }
+
+        // Combine: Name + (Platform/Demo) + Language
+        return baseName + extraInfo + langSuffix;
     }
 
     // <-- Helper: Sort Library -->
@@ -212,14 +664,20 @@ namespace Core
             UI::ThemeManager::ApplyTheme((UI::AppTheme)m_configTheme);
             return;
         }
+
         std::string line;
+
+        // Settings
         if (std::getline(file, line))
         {
             std::stringstream ss(line);
             std::string segment;
             std::vector<std::string> seglist;
+
             while (std::getline(ss, segment, '|'))
+            {
                 seglist.push_back(segment);
+            }
 
             if (seglist.size() >= 3)
             {
@@ -234,7 +692,34 @@ namespace Core
                     m_configTheme = 0;
                 }
             }
+
+            // Check if path is on Line 1 (Format: 1|1|5|C:\Path)
+            if (seglist.size() >= 4)
+            {
+                m_dreammExePath = seglist[3];
+            }
         }
+
+        // --- Path (Fallback) ---
+        // If the path wasn't on line 1, checking if it's on line 2 (Format: 1|1|5 \n C:\Path)
+        if (m_dreammExePath.empty() && std::getline(file, line))
+        {
+            if (!line.empty())
+            {
+                m_dreammExePath = line;
+            }
+        }
+
+        // Cleanup
+        while (!m_dreammExePath.empty() &&
+               (m_dreammExePath.back() == '\n' || m_dreammExePath.back() == '\r' || m_dreammExePath.back() == ' '))
+        {
+            m_dreammExePath.pop_back();
+        }
+
+        file.close();
+
+        // Apply Theme
         UI::ThemeManager::ApplyTheme((UI::AppTheme)m_configTheme);
     }
 
@@ -245,51 +730,30 @@ namespace Core
         {
             file << (m_configEnableBackground ? "1" : "0") << "|"
                  << (m_configMouseWarp ? "1" : "0") << "|"
-                 << m_configTheme << "\n";
+                 << m_configTheme << "\n"
+                 << m_dreammExePath;
         }
     }
 
     void GameLauncher::SaveDatabase()
     {
-        SortLibrary();
-
-        std::ofstream file("games_db.txt");
+        std::ofstream file("games.db");
         if (!file.is_open())
             return;
 
-        // Dreamm Path
-        file << m_dreammExePath << "\n";
-
-        // Last Selected Game Name
-        std::string lastSelected = "";
-        if (m_selectedGameIdx >= 0 && m_selectedGameIdx < (int)m_games.size())
-        {
-            lastSelected = m_games[m_selectedGameIdx].name;
-        }
-        file << lastSelected << "\n";
-
         for (const auto &game : m_games)
         {
-            int audioMask = 0;
-            for (int i = 0; i < 6; i++)
-            {
-                if (game.audioFlags[i])
-                    audioMask |= (1 << i);
-            }
-
             file << game.name << "|"
-                 << game.exePath << "|"
-                 << game.setupPath << "|"
                  << (int)game.platform << "|"
                  << (int)game.status << "|"
-                 << game.ramKB << "|"
-                 << audioMask << "|"
-                 << game.videoHwIdx << "|"
-                 << game.width << "|"
-                 << game.height << "|"
-                 << game.depth << "|"
-                 << game.mips << "|"
+                 << game.exePath << "|"
+                 << game.setupPath << "|"
+                 << game.installPath << "|"                  
+                 << (game.forceWindowed ? "1" : "0") << "|"  
+                 << (game.forceMaximized ? "1" : "0") << "|" 
+                 << (game.forceFullscreen ? "1" : "0") << "|" 
                  << (int)game.machine << "|"
+                 << game.ramKB << "|"
                  << game.description << "\n";
         }
         file.close();
@@ -297,92 +761,87 @@ namespace Core
 
     void GameLauncher::LoadDatabase()
     {
-        std::ifstream file("games_db.txt");
+        std::ifstream file("games.db");
         if (!file.is_open())
             return;
 
-        std::string line;
-
-        // Load Path
-        if (std::getline(file, line))
-            m_dreammExePath = Trim(line);
-
-        // Load Last Selected Name
-        std::string lastSelectedName = "";
-        if (std::getline(file, line))
-            lastSelectedName = Trim(line);
-
         m_games.clear();
+        std::string line;
         while (std::getline(file, line))
         {
-            line = Trim(line);
             if (line.empty())
                 continue;
 
             std::stringstream ss(line);
             std::string segment;
-            std::vector<std::string> seglist;
-
+            std::vector<std::string> parts;
             while (std::getline(ss, segment, '|'))
-            {
-                seglist.push_back(segment);
-            }
+                parts.push_back(segment);
 
-            if (seglist.size() >= 4)
-            {
-                GameEntry g;
-                g.name = seglist[0];
-                g.exePath = seglist[1];
-                g.setupPath = seglist[2];
+            if (parts.empty())
+                continue;
+
+            GameEntry g;
+
+            if (parts.size() > 0)
+                g.name = parts[0];
+            if (parts.size() > 1)
                 try
                 {
-                    g.platform = (GamePlatform)std::stoi(seglist[3]);
-                    g.status = (GameStatus)std::stoi(seglist[4]);
-                    if (seglist.size() > 5)
-                        g.ramKB = std::stoi(seglist[5]);
-                    if (seglist.size() > 6)
-                    {
-                        int audioMask = std::stoi(seglist[6]);
-                        for (int i = 0; i < 6; i++)
-                            g.audioFlags[i] = (audioMask & (1 << i)) != 0;
-                    }
-                    if (seglist.size() > 7)
-                        g.videoHwIdx = std::stoi(seglist[7]);
-                    if (seglist.size() > 10)
-                    {
-                        g.width = std::stoi(seglist[8]);
-                        g.height = std::stoi(seglist[9]);
-                        g.depth = std::stoi(seglist[10]);
-                    }
-                    if (seglist.size() > 11)
-                        g.mips = std::stoi(seglist[11]);
-                    if (seglist.size() > 12)
-                        g.machine = (MachineType)std::stoi(seglist[12]);
-                    if (seglist.size() > 13)
-                        g.description = seglist[13];
+                    g.platform = (GamePlatform)std::stoi(parts[1]);
+                }
+                catch (...)
+                {
+                    g.platform = GamePlatform::DOS;
+                }
+            if (parts.size() > 2)
+                try
+                {
+                    g.status = (GameStatus)std::stoi(parts[2]);
+                }
+                catch (...)
+                {
+                    g.status = GameStatus::Playable;
+                }
+            if (parts.size() > 3)
+                g.exePath = parts[3];
+            if (parts.size() > 4)
+                g.setupPath = parts[4];
+
+            if (parts.size() > 5)
+                g.installPath = parts[5];
+
+            if (parts.size() > 6)
+                g.forceWindowed = (parts[6] == "1");
+            if (parts.size() > 7)
+                g.forceMaximized = (parts[7] == "1");
+            if (parts.size() > 8)
+                g.forceFullscreen = (parts[8] == "1");
+
+            if (parts.size() > 9)
+                try
+                {
+                    g.machine = (MachineType)std::stoi(parts[9]);
                 }
                 catch (...)
                 {
                 }
-                m_games.push_back(g);
-            }
-        }
-
-        // Sort first, then find the index
-        SortLibrary();
-
-        if (!lastSelectedName.empty())
-        {
-            for (size_t i = 0; i < m_games.size(); ++i)
-            {
-                if (m_games[i].name == lastSelectedName)
+            if (parts.size() > 10)
+                try
                 {
-                    m_selectedGameIdx = (int)i;
-                    m_autoScrollFrames = 3;
-                    break;
+                    g.ramKB = std::stoi(parts[10]);
                 }
-            }
+                catch (...)
+                {
+                }
+            if (parts.size() > 11)
+                g.description = parts[11];
+
+            m_games.push_back(g);
         }
+        file.close();
+
+        SortLibrary();
     }
 
     // <-- Launch Logic -->
@@ -391,6 +850,35 @@ namespace Core
         if (m_dreammExePath.empty())
             return "";
 
+        if (runSetup)
+        {
+            if (game.setupPath.empty())
+                return "";
+        }
+        else
+        {
+            if (game.exePath.empty() && game.installPath.empty())
+                return "";
+        }
+
+        std::string cmd = "\"" + m_dreammExePath + "\"";
+
+        if (!game.installPath.empty() && !runSetup)
+        {
+            // Syntax: dreamm.exe -run "C:\Path\To\Install\Folder"
+            cmd += " -run \"" + game.installPath + "\"";
+
+            // Apply Window Mode Flags
+            if (game.forceWindowed)
+                cmd += " -windowed";
+            if (game.forceMaximized)
+                cmd += " -maximized";
+            if (game.forceFullscreen)
+                cmd += " -fullscreen";
+
+            return cmd;
+        }
+
         std::string targetExe = runSetup ? game.setupPath : game.exePath;
         if (targetExe.empty())
             return "";
@@ -398,8 +886,6 @@ namespace Core
         fs::path targetPath(targetExe);
         if (!fs::exists(targetPath))
             return "";
-
-        std::string cmd = "\"" + m_dreammExePath + "\"";
 
         // Mount C: (Always mount the folder containing the executable)
         cmd += " -mount rw:c=\"" + targetPath.parent_path().string() + "\"";
@@ -547,7 +1033,7 @@ namespace Core
 
         SHELLEXECUTEINFOA shExInfo = {0};
         shExInfo.cbSize = sizeof(shExInfo);
-        shExInfo.fMask = SEE_MASK_NOCLOSEPROCESS; // CRITICAL: Ask for the process handle
+        shExInfo.fMask = SEE_MASK_NOCLOSEPROCESS; 
         shExInfo.hwnd = NULL;
         shExInfo.lpVerb = "open";
         shExInfo.lpFile = m_dreammExePath.c_str();
@@ -691,7 +1177,7 @@ namespace Core
             ImGui::SameLine();
             ImGui::Text(" | %s", m_browserCurrentPath.string().c_str());
 
-            // --- Navigation ---
+            // <-- Navigation -->
             bool isRoot = (m_browserCurrentPath == m_browserCurrentPath.root_path());
 
             if (uiDisabled || isRoot)
@@ -717,10 +1203,10 @@ namespace Core
 
             ImGui::Separator();
 
-            // --- File List ---
+            // File List
             ImGui::BeginChild("Files", ImVec2(0, -40), true);
 
-            // --- Auto Scroll Logic ---
+            // <-- Auto Scroll Logic -->
             if (triggerScrollCalculation && !m_browserEntries.empty())
             {
 
@@ -754,7 +1240,6 @@ namespace Core
 
                 m_autoScrollTarget.clear(); // Clear target so we don't scroll again
             }
-            // ------------------------------------
 
             if (isLoading)
             {
@@ -938,7 +1423,7 @@ namespace Core
                 m_selectedGameIdx = (int)i;
                 if (ImGui::IsMouseDoubleClicked(0))
                 {
-                    if (!g.exePath.empty())
+                    if (!g.exePath.empty() || !g.installPath.empty())
                         LaunchGame(g, false);
                 }
             }
@@ -980,10 +1465,22 @@ namespace Core
             g.ramKB = 640;
             m_games.push_back(g);
 
-            m_selectedGameIdx = (int)m_games.size() - 1;
+            SortLibrary();
+
+            m_selectedGameIdx = -1;
+            for (int i = 0; i < (int)m_games.size(); i++)
+            {
+                if (m_games[i].name == "New Game" && m_games[i].exePath.empty())
+                {
+                    m_selectedGameIdx = i;
+                    break;
+                }
+            }
+
+            if (m_selectedGameIdx == -1)
+                m_selectedGameIdx = (int)m_games.size() - 1;
 
             m_autoScrollFrames = 3;
-
             m_showEditWindow = true;
         }
 
@@ -1034,7 +1531,7 @@ namespace Core
 
         ImGui::Spacing();
 
-        bool canPlay = !game.exePath.empty();
+        bool canPlay = !game.exePath.empty() || !game.installPath.empty();
         if (!canPlay)
             ImGui::BeginDisabled();
 
@@ -1104,7 +1601,7 @@ namespace Core
         ImGui::Text("File: %s", game.exePath.c_str());
 
         ImGui::EndChild();
-        ImGui::PopStyleVar(); 
+        ImGui::PopStyleVar();
         ImGui::PopStyleVar();
     }
 
@@ -1170,26 +1667,35 @@ namespace Core
                     if (ImGui::IsItemHovered())
                         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
 
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("Platform");
-                    ImGui::TableSetColumnIndex(1);
-                    int platform = (int)game.platform;
-                    if (ImGui::Combo("##Platform", &platform, "DOS\0Windows\0\0"))
+                    // Platform Selection
+                    if (game.platform == GamePlatform::DreammNative)
                     {
-                        game.platform = (GamePlatform)platform;
-                        for (int i = 0; i < 6; i++)
-                            game.audioFlags[i] = false;
-                        if (game.platform == GamePlatform::Windows)
+                        ImGui::TextDisabled("Platform: DREAMM Native (Detected)");
+                    }
+                    else
+                    {
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text("Platform");
+                        ImGui::TableSetColumnIndex(1);
+                        int platform = (int)game.platform;
+                        if (ImGui::Combo("##Platform", &platform, "DOS\0Windows\0\0"))
                         {
-                            game.ramKB = 65536;
-                            game.audioFlags[5] = true;
-                        }
-                        else
-                        {
-                            game.ramKB = 640;
-                            game.audioFlags[3] = true;
-                            game.audioFlags[5] = true;
+                            game.platform = (GamePlatform)platform;
+                            for (int i = 0; i < 6; i++)
+                                game.audioFlags[i] = false;
+                            if (game.platform == GamePlatform::Windows)
+                            {
+                                game.ramKB = 65536;
+                                game.audioFlags[5] = true;
+                            }
+                            else
+                            {
+                                game.ramKB = 640;
+                                game.audioFlags[3] = true;
+                                game.audioFlags[5] = true;
+                            }
                         }
                     }
 
@@ -1527,16 +2033,16 @@ namespace Core
             // Theme Selector
             ImGui::Spacing();
             ImGui::Text("Interface Theme");
-            const char *themes[] = { 
-                "Auto (Seasonal)", 
-                "Default Dark",    
-                "Valentine (Feb)",  
-                "Shamrock (March)", 
-                "Halloween (Oct)",  
-                "Christmas (Dec)"   
-            };
+            const char *themes[] = {
+                "Auto (Seasonal)",
+                "Default Dark",
+                "Valentine (Feb)",
+                "Shamrock (March)",
+                "Halloween (Oct)",
+                "Christmas (Dec)"};
 
-            if (m_configTheme >= IM_ARRAYSIZE(themes)) m_configTheme = 0;
+            if (m_configTheme >= IM_ARRAYSIZE(themes))
+                m_configTheme = 0;
 
             if (ImGui::Combo("##ThemeCombo", &m_configTheme, themes, IM_ARRAYSIZE(themes)))
             {
@@ -1639,8 +2145,8 @@ namespace Core
         ImGui::Columns(1);
 
         RenderConfigModal();
-
         RenderEditWindow();
+        RenderNewGamesModal();
 
         if (m_dreammExePath.empty() && !m_showFileBrowser)
         {
@@ -1673,7 +2179,9 @@ namespace Core
                 ImGui::Separator();
                 if (ImGui::Button("Save"))
                 {
+                    SaveConfig();
                     SaveDatabase();
+                    SortLibrary();
                     ImGui::CloseCurrentPopup();
                 }
             }
