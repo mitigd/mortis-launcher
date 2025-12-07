@@ -1,26 +1,31 @@
-project('sdl2_template_imgui', ['c', 'cpp'], 
+project('mortis-launcher', ['c', 'cpp'], 
     default_options : [
         'cpp_std=c++17',
         'b_sanitize=none',
         'b_lto=false',
         'b_pch=false',
-        'buildtype=debug'
+        'buildtype=debug' 
     ]
 )
 
 # Get compiler object
 cpp = meson.get_compiler('cpp')
 
-# Add Windows and Unicode specific definitions
-windows_args = [
+# Base Windows Arguments
+ windows_args = [
     '-DUNICODE',
     '-D_UNICODE',
     '-DWIN32',
     '-D_WINDOWS',
     '-DCOBJMACROS',
-    '-D_DEBUG',
     '-D_CRT_SECURE_NO_WARNINGS'
-]
+
+] 
+
+# Add DEBUG definition ONLY if we are actually in debug mode
+if get_option('buildtype') == 'debug'
+    windows_args += '-D_DEBUG'
+endif
 
 # Add linker arguments for static linking
 link_args = [
@@ -108,6 +113,13 @@ windows = import('windows')
 # Compile the resources
 win_resources = windows.compile_resources('resources.rc')
 
+# Decide which build we're doing
+if get_option('buildtype') == 'debug'
+    subsystem_type = 'console'
+else
+    subsystem_type = 'windows'
+endif
+
 # Build the EXE
 executable('mortis-launcher',
     [src_files, win_resources],
@@ -133,6 +145,7 @@ executable('mortis-launcher',
     ],
     cpp_args : windows_args,
     cpp_pch : 'headers/pch.h',
+    win_subsystem : subsystem_type,
     link_args : link_args,
     name_prefix : '',
 )

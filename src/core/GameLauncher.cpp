@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Core/GameLauncher.h"
+#include "Core/Version.h"
 #include "UI/Theme.h"
 #include "UI/UIManager.h"
 #include <iostream>
@@ -207,9 +208,11 @@ namespace Core
     {
         std::ifstream file("launcher_config.txt");
         if (!file.is_open())
+        {
+            UI::ThemeManager::ApplyTheme((UI::AppTheme)m_configTheme);
             return;
+        }
         std::string line;
-        // Simple line-by-line: BgEnabled|MouseWarp|ThemeIdx
         if (std::getline(file, line))
         {
             std::stringstream ss(line);
@@ -232,7 +235,6 @@ namespace Core
                 }
             }
         }
-        // Apply theme immediately on load
         UI::ThemeManager::ApplyTheme((UI::AppTheme)m_configTheme);
     }
 
@@ -1009,7 +1011,7 @@ namespace Core
         {
             ImGui::TextDisabled("Select a game from the library.");
             ImGui::EndChild();
-            ImGui::PopStyleColor();
+            ImGui::PopStyleVar(2);
             return;
         }
 
@@ -1596,7 +1598,7 @@ namespace Core
         if (ImGui::BeginPopupModal("About", &m_showAboutModal, ImGuiWindowFlags_AlwaysAutoResize))
         {
 
-            ImGui::Text("Mortis Launcher v0.2.0");
+            ImGui::Text("Mortis Launcher v%s", Core::Version::STRING);
             ImGui::Separator();
             ImGui::Text("A modern front-end for the DREAMM Emulator.");
             ImGui::Separator();
