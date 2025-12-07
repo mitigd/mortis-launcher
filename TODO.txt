@@ -6,3 +6,4 @@
 [ ] Ability to enable/disable SDL_MOUSE_RELATIVE_MODE_WARP in config modal
 [ ] Limit sidebar max game list width
 [ ] Save window size / sidebar width
+[ ] Once config modal is implemented allow holiday theming if the user wants

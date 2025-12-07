@@ -39,6 +39,7 @@ src_files = files(
     'src/core/Window.cpp',
     'src/graphics/Renderer.cpp',
     'src/ui/UIManager.cpp',
+    'src/ui/Theme.cpp',
 
     'include/imgui/imgui.cpp',
     'include/imgui/imgui_demo.cpp',

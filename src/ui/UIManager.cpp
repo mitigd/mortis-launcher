@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "UI/UIManager.h"
+#include "UI/Theme.h"
 #include "Core/GameLauncher.h"
 
 static Core::GameLauncher g_Launcher;
@@ -63,6 +64,9 @@ namespace UI
         }
 
         ImGui::StyleColorsDark();
+
+        // make a toggle once config modal is implemented
+        // UI::ThemeManager::ApplyTheme();
 
         ImGuiStyle &style = ImGui::GetStyle();
         style.WindowRounding = 0.0f;
