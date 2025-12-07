@@ -885,8 +885,14 @@ namespace Core
         ImGui::InputTextWithHint("##filter", "Name search...", m_filterName, 256);
         if (ImGui::IsItemHovered())
             ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+
         ImGui::Combo("Platform", &m_filterPlatform, "All\0DOS\0Windows\0\0");
         ImGui::Combo("Status", &m_filterStatus, "All\0Unplayable\0Playable\0\0");
+
+        ImGui::PopStyleVar();
+
         ImGui::Separator();
 
         // <-- Start List -->
