@@ -1,6 +1,6 @@
 # Mortis Launcher
 
-![Alt Text](assets/mortis-launcher.png)
+![Alt Text](assets/mortis-fade.gif)
 
 Mortis Launcher is a simple, easy-to-use front end for the DREAMM emulator.
 
