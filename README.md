@@ -1,5 +1,7 @@
 # Mortis Launcher
 
+![Alt Text](assets/mortis-launcher.png)
+
 Mortis Launcher is a simple, easy-to-use front end for the DREAMM emulator.
 
 If you are using the latest beta versions of DREAMM, you know it has experimental support for running DOS and Windows games. This launcher helps you organize those games into a clean library so you don't have to type out long command-line arguments every time you want to play or test support.
