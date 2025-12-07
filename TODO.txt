@@ -1,0 +1,2 @@
+[] Make the game list scroll to newly added game
+[] Cross compatability with other systems
