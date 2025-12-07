@@ -1,2 +1,8 @@
-[] Make the game list scroll to newly added game
-[] Cross compatability with other systems
+[+] Make the game list scroll to newly added game
+[ ] Cross compatability with other systems
+[ ] Fix the padding issues for the game list and dashboard
+[ ] Add a config option to change Dreamm location within the app
+[ ] Implement an about modal [versioning/author/etc]
+[ ] Ability to enable/disable SDL_MOUSE_RELATIVE_MODE_WARP in config modal
+[ ] Limit sidebar max game list width
+[ ] Save window size / sidebar width
