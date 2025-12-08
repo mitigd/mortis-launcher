@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
+#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -351,7 +352,7 @@ namespace Core
         if (imported > 0)
         {
             SortLibrary();
-            SaveDatabase(); 
+            SaveDatabase();
             try
             {
                 fs::remove(legacyFile);
@@ -477,7 +478,7 @@ namespace Core
     // Helper to look up readable names
     std::string GameLauncher::ResolveDreammGameName(const std::string &folderID, const std::string &versionID, GamePlatform &outPlatform)
     {
-        const auto& idToName = Core::GameDatabase::GetDreammMap();
+        const auto &idToName = Core::GameDatabase::GetDreammMap();
 
         std::string baseName = folderID;
         auto it = idToName.find(folderID);
@@ -860,71 +861,85 @@ namespace Core
 
         std::string cmd = "\"" + m_dreammExePath + "\"";
 
+        // <-- Dreamm Native Launch -->
         if (!game.installPath.empty() && !runSetup)
         {
-            // Syntax: dreamm.exe -run "C:\Path\To\Install\Folder"
             cmd += " -run \"" + game.installPath + "\"";
 
-            // Apply Window Mode Flags
             if (game.forceWindowed)
                 cmd += " -windowed";
             if (game.forceMaximized)
                 cmd += " -maximized";
             if (game.forceFullscreen)
                 cmd += " -fullscreen";
-
-            return cmd;
         }
-
-        std::string targetExe = runSetup ? game.setupPath : game.exePath;
-        if (targetExe.empty())
-            return "";
-
-        fs::path targetPath(targetExe);
-        if (!fs::exists(targetPath))
-            return "";
-
-        // Mount C: (Always mount the folder containing the executable)
-        cmd += " -mount rw:c=\"" + targetPath.parent_path().string() + "\"";
-
-        // Mount D: (If an ISO/CUE is provided)
-        if (!game.isoPath.empty() && fs::exists(game.isoPath))
-        {
-            cmd += " -mount \"d=" + game.isoPath + "\"";
-        }
-
-        if (!game.rootPathOverride.empty())
-            cmd += " -prop rootpath=\"" + game.rootPathOverride + "\"";
-
-        cmd += " -prop ramkb=" + std::to_string(game.ramKB);
-        // Handle 0 as "unlimited"
-        if (game.mips <= 0)
-        {
-            cmd += " -prop mips=unlimited";
-        }
+        // <-- Manual Launch -->
         else
         {
-            cmd += " -prop mips=" + std::to_string(game.mips);
-        }
-        cmd += " -prop machine=" + std::string(game.machine == MachineType::PC ? "pc" : "tandy");
+            std::string targetExe = runSetup ? game.setupPath : game.exePath;
+            fs::path targetPath(targetExe);
 
-        std::string audioStr = "";
-        for (int i = 0; i < 6; i++)
-        {
-            if (game.audioFlags[i])
+            if (!fs::exists(targetPath))
+                return "";
+
+            // Mount C:
+            cmd += " -mount rw:c=\"" + targetPath.parent_path().string() + "\"";
+
+            // Mount D:
+            if (!game.isoPath.empty() && fs::exists(game.isoPath))
             {
-                if (!audioStr.empty())
-                    audioStr += "+";
-                audioStr += m_audioNames[i];
+                cmd += " -mount \"d=" + game.isoPath + "\"";
             }
-        }
-        if (audioStr.empty())
-            audioStr = "sb16";
-        cmd += " -prop audiohw=" + audioStr;
 
-        cmd += " -prop videohw=" + std::string(m_videoHwOptions[game.videoHwIdx]);
-        cmd += " -prop winres=" + std::to_string(game.width) + "x" + std::to_string(game.height) + "x" + std::to_string(game.depth);
-        cmd += " -launch \"" + targetExe + "\"";
+            if (!game.rootPathOverride.empty())
+                cmd += " -prop rootpath=\"" + game.rootPathOverride + "\"";
+
+            cmd += " -prop ramkb=" + std::to_string(game.ramKB);
+
+            if (game.mips <= 0)
+                cmd += " -prop mips=unlimited";
+            else
+                cmd += " -prop mips=" + std::to_string(game.mips);
+
+            cmd += " -prop machine=" + std::string(game.machine == MachineType::PC ? "pc" : "tandy");
+
+            // Audio
+            std::string audioStr = "";
+            for (int i = 0; i < 6; i++)
+            {
+                if (game.audioFlags[i])
+                {
+                    if (!audioStr.empty())
+                        audioStr += "+";
+                    audioStr += m_audioNames[i];
+                }
+            }
+            if (audioStr.empty())
+                audioStr = "sb16";
+            cmd += " -prop audiohw=" + audioStr;
+
+            // Video
+            cmd += " -prop videohw=" + std::string(m_videoHwOptions[game.videoHwIdx]);
+            cmd += " -prop winres=" + std::to_string(game.width) + "x" + std::to_string(game.height) + "x" + std::to_string(game.depth);
+
+            // Queue the executable for launch
+            cmd += " -launch \"" + targetExe + "\"";
+        }
+
+        // Only apply if Windows or DREAMM Native (scanned games)
+        if (game.platform == GamePlatform::Windows ||
+            game.platform == GamePlatform::DreammNative ||
+            !game.installPath.empty())
+        {
+            // Detect host threads (e.g., 12 for a 6-core/12-thread CPU)
+            unsigned int cpuThreads = std::thread::hardware_concurrency();
+
+            // Safety fallback if detection fails
+            if (cpuThreads == 0)
+                cpuThreads = 2;
+
+            cmd += " -threads " + std::to_string(cpuThreads);
+        }
 
         return cmd;
     }
@@ -970,9 +985,9 @@ namespace Core
         cmd += " -prop videohw=" + std::string(m_videoHwOptions[game.videoHwIdx]);
         cmd += " -prop win32res=" + std::to_string(game.width) + "x" + std::to_string(game.height) + "x" + std::to_string(game.depth);
 
-        // The filename will be "GameEXE.dreamm" (e.g., DOOM.EXE -> DOOM.dreamm)
-        std::string dreammFileName = targetPath.filename().stem().string() + ".dreamm";
-        cmd += " -makedream \"" + dreammFileName + "\"";
+        fs::path dreammFullPath = targetPath.parent_path() / (targetPath.filename().stem().string() + ".dreamm");
+
+        cmd += " -makedream \"" + dreammFullPath.string() + "\"";
 
         // Launch
         cmd += " -launch \"" + game.exePath + "\"";
@@ -981,7 +996,10 @@ namespace Core
 
 #ifdef _WIN32
         std::string params = cmd.substr(m_dreammExePath.length() + 2);
-        ShellExecuteA(NULL, "open", m_dreammExePath.c_str(), params.c_str(), NULL, SW_SHOWDEFAULT);
+
+        std::string gameDir = targetPath.parent_path().string();
+
+        ShellExecuteA(NULL, "open", m_dreammExePath.c_str(), params.c_str(), gameDir.c_str(), SW_SHOWDEFAULT);
 #else
         std::system(cmd.c_str());
 #endif
@@ -1581,6 +1599,13 @@ namespace Core
         {
             CreateDreammFile(game);
         }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "This option writes the internally generated .dreamm file\n"
+                "to the current directory. It provides a baseline configuration\n"
+                "that can be edited or expanded later.");
+        }
         ImGui::PopStyleColor(2);
         if (!canPlay)
             ImGui::EndDisabled();
@@ -1971,6 +1996,7 @@ namespace Core
                 {
                     SaveDatabase();
                     m_showEditWindow = false;
+                    SortLibrary();
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::SameLine();
